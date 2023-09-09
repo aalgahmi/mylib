@@ -196,3 +196,147 @@ def plot_decision_regions(X, y, learner, resolution=0.1, title="Decision regions
         ax.set_title(title)
 
     # plt.show()
+
+
+#############################################################################################
+#
+# Decision tree models
+#
+#############################################################################################
+class DecisionTreeClassifier:
+    """ 
+    Used for classification when input features are discrete.
+    """
+
+    def __init__(self, max_depth=-1, nFeatures=0, criterion='gini'):
+        self.tree = pd.Series(dtype=object)
+        self.__criterion = criterion
+        self.nFeatures = nFeatures
+        self.max_depth = max_depth
+
+    def fit(self, X, y, features, target):
+        self.features = features
+        self.dataset = to_dataframe(X, y, features, target)
+        self.make_tree(self.dataset, self.tree, depth=1)
+
+        return self
+
+    def entropy(self, df):
+        p = df.iloc[:, -1].value_counts() / len(df)
+        return (-p * np.log2(p)).sum()
+
+    def info_gain(self, df, feature):
+        p = df[feature].value_counts() / len(df)
+
+        for v in p.index:
+            p.loc[v] *= self.entropy(df[df[feature] == v])
+
+        return self.entropy(df) - p.sum()
+
+    def gini(self, df):
+        p = df.iloc[:, -1].value_counts() / len(df)
+        return 1 - (p**2).sum()
+
+    def weighted_gini(self, df, feature):
+        p = df[feature].value_counts() / len(df)
+
+        for v in p.index:
+            p.loc[v] *= self.gini(df[df[feature] == v])
+
+        return p.sum()
+
+    def best_feature(self, df):
+        features = df.columns[:-1].copy().values
+        if self.nFeatures != 0:
+            f_indexes = np.arange(min(self.nFeatures, len(features)))
+            np.random.shuffle(f_indexes)
+            features = features[f_indexes]
+
+        info = pd.DataFrame({"feature": features})
+        if self.__criterion == 'gini':
+            info['gini'] = [self.weighted_gini(df, f) for f in features]
+            return info['feature'][info['gini'].argmin()]
+        else:
+            info['gain'] = [self.info_gain(df, f) for f in features]
+            return info['feature'][info['gain'].argmax()]
+
+
+    def print_tree(self, name='', node=None, depth=1):
+        if node is None:
+            node = self.tree
+
+        for f in node.index:
+            if isinstance(node[f], tuple):
+                if f != '-^-':
+                    print(' ' * depth, f, ' => ', node[f], sep='')
+            else:
+                print(' ' * depth, f, ': ', sep='')
+                self.print_tree(f, node[f], depth + 1)
+
+    def make_tree(self, df, node, feature=None, depth=1):
+        if self.max_depth == 0:
+            return
+
+        if feature is None:
+            feature = self.best_feature(df)
+
+        node[feature] = pd.Series(dtype=object)
+
+        # Store the plurality vote class at the feature depth
+        # under a "hidden" _^_ key just in case we need it for
+        # when the unseen example does not lead to a leaf.
+        node[feature]['-^-'] = (feature, df.iloc[:, -1].mode()[0])
+
+        fvalues = df[feature].unique()
+        for v in fvalues:
+            d = df[df[feature] == v]
+
+            default_class = d.iloc[:, -1].mode()[0]
+            if len(d) == 0 or (self.max_depth > 0 and depth >= self.max_depth):
+               node[feature][v] = ('L', default_class)
+            else:
+                n_classes = len(d.iloc[:, -1].unique())
+                if n_classes == 1:
+                    node[feature][v] = ('L', d.iloc[:, -1].iloc[0])
+                elif n_classes > 1:
+                    d = d.drop([feature], axis=1)
+                    if len(d.columns) == 1: 
+                        node[feature][v] = ('L', d.iloc[:, -1].mode()[0])
+                    else:
+                        next_best_feature = self.best_feature(d)
+                        node[feature][v] = pd.Series(dtype=object)
+                        self.make_tree(d, node[feature][v], next_best_feature, depth=depth + 1)
+                else:
+                    pass
+
+    def predict(self, X_unseen, node=None):
+        """
+        Returns the most probable label (or class) for each unseen input. The
+        unseen needs to be dataseries of the same features (as index) as the 
+        training data. It can also be a data frame with the same features as 
+        the training data
+        """
+        if X_unseen.ndim == 1:
+            x = pd.Series(X_unseen, index=self.features)
+            if node is None:
+                node = self.tree
+
+            feature = node.index[0]
+
+            children = node[feature]
+            value = x[feature]
+            for c in children.index:
+                if c == value:
+                    if isinstance(children[c], tuple):
+                        return children[c][1]
+                    else:
+                        return self.predict(x, children[c])
+
+            # At this point, a leaf was not reached. So we return
+            # a plurality vote at the deepest node reached.
+            return children['-^-'][1]
+        else:
+            return np.array([self.predict(X_unseen[i,:]) for i in range(len(X_unseen))]) 
+
+    def __repr__(self):
+        return repr(self.tree)
