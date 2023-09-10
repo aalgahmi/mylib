@@ -1,3 +1,4 @@
+import requests, zipfile, io
 import numpy as np
 import pandas as pd
 import scipy.stats as st
@@ -5,6 +6,16 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score
 from sklearn.utils import check_array
+
+#############################################################################################
+#
+# Utility functions
+#
+#############################################################################################
+def download_zip_and_open_a_file(zip_url, filename):
+    r = requests.get(url)
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    return zf.open(filename)
 
 #############################################################################################
 #
@@ -196,7 +207,6 @@ def plot_decision_regions(X, y, learner, resolution=0.1, title="Decision regions
         ax.set_title(title)
 
     # plt.show()
-
 
 #############################################################################################
 #
