@@ -12,7 +12,7 @@ from sklearn.utils import check_array
 # Utility functions
 #
 #############################################################################################
-def download_zip_and_open_a_file(zip_url, filename):
+def download_zip_and_open_a_file(url, filename):
     r = requests.get(url)
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     return zf.open(filename)
